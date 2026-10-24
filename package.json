@@ -1,27 +1,22 @@
 {
   "name": "discord-clone",
   "version": "1.0.0",
-  "description": "Discord clone - full stack web app ready for Render/Vercel",
-  "private": true,
+  "description": "Discord clone with WebRTC and SQLite",
+  "main": "server/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "node server/index.js",
-    "dev:client": "npx serve public -l 3001",
     "start": "node server/index.js",
-    "build": "echo 'Static files in public/ - no build step needed'",
-    "vercel-build": "echo 'Ready for Vercel'"
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "sql.js": "^1.10.3",
     "cors": "^2.8.5",
-    "express": "^4.21.0",
-    "jsonwebtoken": "^9.0.2",
-    "uuid": "^10.0.0",
-    "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "concurrently": "^9.0.0",
-    "serve": "^14.2.0"
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "sql.js": "^1.8.0",
+    "uuid": "^9.0.0",
+    "ws": "^8.13.0"
   }
 }
