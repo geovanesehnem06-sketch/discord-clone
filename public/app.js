@@ -76,6 +76,8 @@ async function loadAll() {
     const accepted = friends.filter(f => f.status === 'accepted');
     const pending = friends.filter(f => f.status === 'pending');
     set({ guilds, friends: accepted, pendingFriends: pending });
+    const pathMatch = window.location.pathname.match(/^\/invite\/([a-zA-Z0-9]+)$/);
+    if (pathMatch) { joinBySlug(pathMatch[1]); return; }
     if (guilds.length > 0) selectGuild(guilds[0].id);
   } catch (e) { console.error(e); }
 }
@@ -416,6 +418,53 @@ function fmtCallDuration() {
   return String(m).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
 }
 
+async function joinVoiceChannel(channelId) {
+  const gch = S.channels[S.activeGuildId] || [];
+  const ch = gch.find(c => c.id === channelId);
+  if (!ch) return;
+  const gm = S.members[S.activeGuildId] || [];
+  const onlineOthers = gm.filter(m => m.user.id !== S.user.id && m.status === 'online');
+  if (onlineOthers.length === 0) {
+    showToast('Nenhum outro membro online neste servidor para chamar');
+    return;
+  }
+  const target = onlineOthers[0];
+  set({ callType: 'voice', callPartner: { user: target.user }, activeView: 'call', cameraOn: false });
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(await getMediaConstraints(false));
+    applyLocalAudioState(stream);
+    set({ localStream: stream });
+    const roomId = Math.random().toString(36).slice(2);
+    S.ws.send(JSON.stringify({ type: 'CALL_REQUEST', targetUserId: target.user.id, callType: 'voice', roomId }));
+    startPeerConnection(roomId, target.user.id, false);
+  } catch (e) {
+    showToast('Não foi possível acessar o microfone: ' + e.message, true);
+    endCallUI();
+  }
+}
+
+async function createInvite(guildId) {
+  try {
+    const r = await api('POST', '/guilds/' + guildId + '/invites');
+    const url = window.location.origin + '/invite/' + r.code;
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(url);
+      showToast('Link de convite copiado! ' + url);
+    } else {
+      prompt('Copie o link de convite:', url);
+    }
+  } catch (e) { showToast(e.message, true); }
+}
+
+async function joinBySlug(code) {
+  try {
+    const r = await api('POST', '/invites/' + code + '/join');
+    showToast('Entrou no servidor ' + r.guild.name + '!');
+    await loadAll();
+    selectGuild(r.guild.id);
+  } catch (e) { showToast(e.message, true); }
+}
+
 function logout() {
   if (S.ws) S.ws.close();
   localStorage.removeItem('dc_token');
@@ -482,6 +531,7 @@ ${S.guilds.map(g => `<div class="server-icon ${g.id === S.activeGuildId ? 'activ
 <div class="server-icon server-add" id="btn-add-guild" title="Criar servidor">+</div>
 </div>
 ${isFriends ? renderFriendsView() : isCall ? renderCallView() : renderChatView(ag, tch, vch, ach, msgs, gm, onl, off)}
+</div>
 <div class="user-panel-wrap">
 <div class="user-panel">
 <div class="user-avatar" style="background:${sCol(S.user?.username || 'U')}">${ini(S.user?.username || 'U')}</div>
@@ -491,7 +541,6 @@ ${isFriends ? renderFriendsView() : isCall ? renderCallView() : renderChatView(a
 <button class="user-ctrl-btn ${S.deafened ? 'active-warn' : ''}" id="btn-deafen-panel" title="Desativar áudio">${S.deafened ? '&#x1F6AB;' : '&#x1F3A7;'}</button>
 <button class="user-ctrl-btn" id="btn-settings" title="Configurações">&#x2699;</button>
 <button class="user-ctrl-btn" id="btn-logout" title="Sair" style="color:#ed4245;">&#x23FB;</button>
-</div>
 </div>
 </div>
 </div>
@@ -558,7 +607,7 @@ function renderCallView() {
 
 function renderChatView(ag, tch, vch, ach, msgs, gm, onl, off) {
   return `<div class="channel-sidebar">
-<div class="server-header"><span>${ag ? esc(ag.name) : 'Selecione um servidor'}</span><span style="font-size:12px;color:#b9bbbe;">&#x25BC;</span></div>
+<div class="server-header" id="btn-invite-server" title="Clique para gerar link de convite">${ag ? esc(ag.name) : 'Selecione um servidor'}<span style="font-size:12px;color:#b9bbbe;">&#x25BC;</span></div>
 <div class="channel-list">
 ${tch.length ? '<div class="channel-category">&#x25BC; Canais de Texto</div>' + tch.map(c => `<div class="channel-item ${c.id === S.activeChannelId ? 'active' : ''}" data-channel="${c.id}"><span class="channel-hash">#</span><span>${esc(c.name)}</span></div>`).join('') : ''}
 ${vch.length ? '<div class="channel-category">&#x25BC; Canais de Voz</div>' + vch.map(c => `<div class="channel-item voice-channel" data-voice="${c.id}"><span style="font-size:16px;">&#x1F50A;</span><span>${esc(c.name)}</span></div>`).join('') : ''}
@@ -631,6 +680,7 @@ function bindApp() {
   document.getElementById('btn-logout')?.addEventListener('click', logout);
   document.getElementById('btn-friends')?.addEventListener('click', () => set({ activeView: 'friends' }));
   document.getElementById('btn-add-guild')?.addEventListener('click', () => { const n = prompt('Nome do novo servidor:'); if (n) createGuild(n); });
+  document.getElementById('btn-invite-server')?.addEventListener('click', () => { if (S.activeGuildId) createInvite(S.activeGuildId); else showToast('Selecione um servidor primeiro', true); });
   document.getElementById('btn-add-friend')?.addEventListener('click', () => { const n = prompt('Nome de usuário do amigo:'); if (n) addFriend(n); });
   document.getElementById('btn-end-call')?.addEventListener('click', endCall);
   document.getElementById('btn-mute')?.addEventListener('click', toggleMute);
@@ -648,7 +698,7 @@ function bindApp() {
   document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => { set({ settingsTab: el.dataset.tab }); if (el.dataset.tab === 'voice') startPreview(); }));
   document.querySelectorAll('[data-guild]').forEach(el => el.addEventListener('click', () => selectGuild(el.dataset.guild)));
   document.querySelectorAll('[data-channel]').forEach(el => el.addEventListener('click', () => selectChannel(el.dataset.channel)));
-  document.querySelectorAll('[data-voice]').forEach(el => el.addEventListener('click', () => { showToast('Canais de voz usam a aba de amigos para chamadas 1:1 nesta versão'); }));
+  document.querySelectorAll('[data-voice]').forEach(el => el.addEventListener('click', () => joinVoiceChannel(el.dataset.voice)));
   document.querySelectorAll('[data-accept]').forEach(el => el.addEventListener('click', () => acceptFriend(el.dataset.accept)));
   document.querySelectorAll('[data-decline]').forEach(el => el.addEventListener('click', async () => { await api('DELETE', '/friends/' + el.dataset.decline); set({ pendingFriends: S.pendingFriends.filter(f => f.id !== el.dataset.decline) }); }));
   document.querySelectorAll('[data-remove]').forEach(el => el.addEventListener('click', () => removeFriend(el.dataset.remove)));

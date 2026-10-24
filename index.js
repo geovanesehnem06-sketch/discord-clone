@@ -76,6 +76,14 @@ async function initDB() {
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(from_id, to_id)
     );
+    CREATE TABLE IF NOT EXISTS invites (
+      code TEXT PRIMARY KEY,
+      guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE,
+      creator_id TEXT NOT NULL REFERENCES users(id),
+      uses INTEGER DEFAULT 0,
+      max_uses INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   const userCount = db.exec('SELECT COUNT(*) as c FROM users');
@@ -285,6 +293,26 @@ app.get('/api/users/search', auth, (req, res) => {
   if (!q || q.length < 2) return res.json([]);
   const rows = queryAll('SELECT id,username,avatar FROM users WHERE LOWER(username) LIKE LOWER(?) AND id!=? LIMIT 10', ['%' + q + '%', req.user.id]);
   res.json(rows);
+});
+
+app.post('/api/guilds/:guildId/invites', auth, (req, res) => {
+  const guild = queryOne('SELECT id,name FROM guilds WHERE id=?', [req.params.guildId]);
+  if (!guild) return res.status(404).json({ error: 'Servidor não encontrado' });
+  const member = queryOne('SELECT 1 FROM memberships WHERE guild_id=? AND user_id=?', [req.params.guildId, req.user.id]);
+  if (!member) return res.status(403).json({ error: 'Você não é membro deste servidor' });
+  const code = Math.random().toString(36).slice(2, 10);
+  runSQL('INSERT INTO invites (code,guild_id,creator_id) VALUES (?,?,?)', [code, req.params.guildId, req.user.id]);
+  res.status(201).json({ code, guild: { id: guild.id, name: guild.name } });
+});
+
+app.post('/api/invites/:code/join', auth, (req, res) => {
+  const inv = queryOne('SELECT i.code,i.guild_id,i.uses,i.max_uses,g.name FROM invites i JOIN guilds g ON g.id=i.guild_id WHERE i.code=?', [req.params.code]);
+  if (!inv) return res.status(404).json({ error: 'Convite inválido ou expirado' });
+  if (inv.max_uses > 0 && inv.uses >= inv.max_uses) return res.status(410).json({ error: 'Este convite atingiu o limite de usos' });
+  const already = queryOne('SELECT 1 FROM memberships WHERE guild_id=? AND user_id=?', [inv.guild_id, req.user.id]);
+  if (!already) runSQL('INSERT INTO memberships (guild_id,user_id) VALUES (?,?)', [inv.guild_id, req.user.id]);
+  runSQL('UPDATE invites SET uses=uses+1 WHERE code=?', [req.params.code]);
+  res.json({ guild: { id: inv.guild_id, name: inv.name } });
 });
 
 function broadcastToChannel(channelId, payload) {
