@@ -1,7 +1,7 @@
 {
   "name": "discord-clone",
   "version": "1.0.0",
-  "description": "Discord clone - full stack web app ready for Vercel",
+  "description": "Discord clone - full stack web app ready for Render/Vercel",
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^13.0.3",
+    "sql.js": "^1.10.3",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
